@@ -18,17 +18,13 @@ import numpy as np
 from pathlib import Path
 
 # 屏蔽 debug 日志、进度条和警告
-os.environ["MODELSCOPE_LOG_LEVEL"] = "40"  # ERROR=40
+os.environ["MODELSCOPE_LOG_LEVEL"] = "40"
 os.environ["FUNASR_DISABLE_LOG"] = "1"
+os.environ["TQDM_DISABLE"] = "1"
 logging.disable(logging.WARNING)
 warnings.filterwarnings("ignore")
 
-# 屏蔽 tqdm 进度条
-from unittest.mock import patch
-import io
-os.environ["TQDM_DISABLE"] = "1"
-
-# 静音 import 阶段的输出（funasr 会打印版本号等）
+# 静音 import
 _real_stdout = sys.stdout
 sys.stdout = open(os.devnull, "w")
 try:
@@ -43,13 +39,30 @@ finally:
 # PCM 参数
 SAMPLE_RATE = 16000
 BYTES_PER_SAMPLE = 2
-# 每 5 秒处理一次（非流式，准确率更高）
-CHUNK_SECONDS = 5
-CHUNK_SIZE = SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_SECONDS
+
+# VAD 参数
+FRAME_MS = 100  # 每帧 100ms
+FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 1600 samples
+FRAME_BYTES = FRAME_SAMPLES * BYTES_PER_SAMPLE  # 3200 bytes
+
+SPEECH_THRESHOLD = 0.001  # 语音能量阈值
+SILENCE_FRAMES = 5  # 连续 5 帧静音（500ms）则认为一句话结束
+MIN_SPEECH_FRAMES = 3  # 最少 3 帧（300ms）才算有效语音
+MAX_SPEECH_SECONDS = 15  # 最长 15 秒强制切句（避免一直不停）
 
 
 def log(msg):
     print(f"[transcribe] {msg}", file=sys.stderr, flush=True)
+
+
+def suppress_stdout(func, *args, **kwargs):
+    """调用函数时屏蔽 stdout"""
+    _out = sys.stdout
+    sys.stdout = open(os.devnull, "w")
+    try:
+        return func(*args, **kwargs)
+    finally:
+        sys.stdout = _out
 
 
 def main():
@@ -64,62 +77,88 @@ def main():
 
     log("正在加载 ASR 模型（首次运行需下载，请稍候）...")
 
-    # 静音模型加载阶段的 stdout 输出
-    _real_stdout = sys.stdout
-    sys.stdout = open(os.devnull, "w")
-    try:
-        model = AutoModel(
-            model="iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
-            vad_model="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-            punc_model="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
-            disable_update=True,
-        )
-    finally:
-        sys.stdout = _real_stdout
+    model = suppress_stdout(
+        AutoModel,
+        model="iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
+        vad_model="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+        punc_model="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
+        disable_update=True,
+    )
 
-    log("模型加载完成")
-    log("开始接收音频流...")
-    log("每 5 秒输出一次转写结果")
+    log("模型加载完成，开始接收音频流...")
 
     sentences = []
+    speech_buffer = []  # 累积的语音帧
+    silence_count = 0  # 连续静音帧计数
+    is_speaking = False  # 当前是否在说话
+
+    def recognize_and_output(audio_frames):
+        """识别累积的音频并输出"""
+        if not audio_frames:
+            return
+        audio = np.concatenate(audio_frames)
+        duration = len(audio) / SAMPLE_RATE
+        if duration < 0.3:  # 太短跳过
+            return
+
+        results = suppress_stdout(
+            model.generate, input=audio, batch_size_s=300, disable_pbar=True
+        )
+
+        for result in results:
+            text = result.get("text", "").strip()
+            if not text:
+                continue
+            timestamp = time.strftime("%H:%M:%S")
+            line = f"[{timestamp}] {text}"
+            print(line, flush=True)
+            sentences.append(line)
+            if args.output:
+                with open(args.output, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
 
     try:
         while True:
-            data = sys.stdin.buffer.read(CHUNK_SIZE)
+            data = sys.stdin.buffer.read(FRAME_BYTES)
             if not data:
                 break
 
-            audio = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+            frame = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+            energy = np.abs(frame).mean()
 
-            # 跳过静音段（能量太低不处理）
-            if np.abs(audio).mean() < 0.0005:
-                continue
+            if energy >= SPEECH_THRESHOLD:
+                # 检测到语音
+                speech_buffer.append(frame)
+                silence_count = 0
+                is_speaking = True
 
-            _real_stdout = sys.stdout
-            sys.stdout = open(os.devnull, "w")
-            try:
-                results = model.generate(input=audio, batch_size_s=300, disable_pbar=True)
-            finally:
-                sys.stdout = _real_stdout
+                # 超过最大时长，强制切句
+                if len(speech_buffer) * FRAME_MS / 1000 >= MAX_SPEECH_SECONDS:
+                    recognize_and_output(speech_buffer)
+                    speech_buffer = []
+                    is_speaking = False
+            else:
+                # 静音
+                if is_speaking:
+                    silence_count += 1
+                    speech_buffer.append(frame)  # 保留少量静音（自然过渡）
 
-            for result in results:
-                text = result.get("text", "").strip()
-                if not text:
-                    continue
-
-                timestamp = time.strftime("%H:%M:%S")
-                line = f"[{timestamp}] {text}"
-                print(line, flush=True)
-                sentences.append(line)
-
-                if args.output:
-                    with open(args.output, "a", encoding="utf-8") as f:
-                        f.write(line + "\n")
+                    if silence_count >= SILENCE_FRAMES:
+                        # 一句话结束
+                        if len(speech_buffer) >= MIN_SPEECH_FRAMES:
+                            recognize_and_output(speech_buffer)
+                        speech_buffer = []
+                        silence_count = 0
+                        is_speaking = False
 
     except KeyboardInterrupt:
         pass
     except BrokenPipeError:
         pass
+
+    # 处理剩余
+    if speech_buffer and len(speech_buffer) >= MIN_SPEECH_FRAMES:
+        recognize_and_output(speech_buffer)
 
     log(f"转写结束，共 {len(sentences)} 句")
     if args.output:
