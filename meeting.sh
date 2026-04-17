@@ -87,16 +87,14 @@ start_capture() {
     echo "  运行 meeting stop 结束会议"
     echo ""
     echo "--- 实时转写 ---"
+    echo ""
 
-    # 启动 audio_capture | transcribe.py 管道
-    "$SCRIPT_DIR/audio_capture" 2>/dev/null | \
-        python3 "$SCRIPT_DIR/transcribe.py" --output "$TRANSCRIPT_FILE" &
-    PIPE_PID=$!
-    echo "$PIPE_PID" > "$PID_FILE"
+    # 记录当前进程组，方便 stop 时清理
+    echo "$$" > "$PID_FILE"
 
-    # 等待管道进程（前台显示转写结果）
-    wait "$PIPE_PID" 2>/dev/null || true
-    rm -f "$PID_FILE"
+    # 前台运行管道，Ctrl+C 直接中断
+    exec "$SCRIPT_DIR/audio_capture" 2>&1 | \
+        python3 "$SCRIPT_DIR/transcribe.py" --output "$TRANSCRIPT_FILE"
 }
 
 stop_capture() {
@@ -111,10 +109,10 @@ stop_capture() {
     echo ""
     echo "正在停止会议..."
 
-    # 终止管道进程组
+    # 终止所有相关进程
     kill "$PID" 2>/dev/null || true
-    # 也终止可能残留的 audio_capture 进程
     pkill -f "audio_capture" 2>/dev/null || true
+    pkill -f "transcribe.py" 2>/dev/null || true
 
     rm -f "$PID_FILE"
 
