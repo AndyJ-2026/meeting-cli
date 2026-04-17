@@ -10,6 +10,37 @@
 
 set -e
 
+# trap 中不用 set -e，避免命令失败导致整个 trap 中断
+cleanup_and_summarize() {
+    set +e
+    local transcript="$1"
+    local pipe_pid="$2"
+
+    echo ""
+    echo ""
+    echo "正在停止会议..."
+    kill "$pipe_pid" 2>/dev/null
+    pkill -f "audio_capture" 2>/dev/null
+    pkill -f "transcribe.py" 2>/dev/null
+    wait "$pipe_pid" 2>/dev/null
+    rm -f "$PID_FILE"
+
+    echo "会议已结束。"
+    echo ""
+
+    if [ -f "$transcript" ]; then
+        LINES=$(grep -c "^\[" "$transcript" 2>/dev/null || echo "0")
+        echo "转写: $LINES 句"
+        echo ""
+        if [ "$LINES" -gt 0 ]; then
+            generate_summary "$transcript"
+        else
+            echo "转写为空，跳过纪要生成。"
+        fi
+    fi
+    exit 0
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TRANSCRIPTS_DIR="$SCRIPT_DIR/transcripts"
 PID_FILE="$SCRIPT_DIR/.capture.pid"
@@ -106,30 +137,7 @@ start_capture() {
     echo "$PIPE_PID" > "$PID_FILE"
 
     # Ctrl+C 时停止并生成纪要
-    trap '' INT  # 先忽略，避免 trap 处理函数自身被中断
-    trap '
-        echo ""
-        echo ""
-        echo "正在停止会议..."
-        kill $PIPE_PID 2>/dev/null || true
-        pkill -f "audio_capture" 2>/dev/null || true
-        pkill -f "transcribe.py" 2>/dev/null || true
-        wait $PIPE_PID 2>/dev/null
-        rm -f "$PID_FILE"
-        echo "会议已结束。"
-        echo ""
-        if [ -f "$TRANSCRIPT_FILE" ]; then
-            LINES=$(grep -c "^\[" "$TRANSCRIPT_FILE" 2>/dev/null || echo "0")
-            echo "转写: $LINES 句"
-            echo ""
-            if [ "$LINES" -gt 0 ]; then
-                generate_summary "$TRANSCRIPT_FILE"
-            else
-                echo "转写为空，跳过纪要生成。"
-            fi
-        fi
-        exit 0
-    ' INT TERM
+    trap "cleanup_and_summarize '$TRANSCRIPT_FILE' '$PIPE_PID'" INT TERM
 
     # 前台等待管道
     wait "$PIPE_PID" 2>/dev/null || true

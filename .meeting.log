@@ -2,8 +2,12 @@
 [audio_capture] Output format: PCM 16-bit signed LE, mono, 16000 Hz
 [audio_capture] Using display: 1470x956
 [audio_capture] System audio capture started (ScreenCaptureKit)
-[audio_capture] Mic input format: <AVAudioFormat 0x700de9310:  1 ch,  48000 Hz, Float32>
+[audio_capture] Mic input format: <AVAudioFormat 0xae4de53b0:  1 ch,  48000 Hz, Float32>
 [audio_capture] Microphone capture started
 [audio_capture] Capture running. Press Ctrl+C to stop.
-[transcribe] 正在加载 ASR 模型（首次运行需下载，请稍候）...
+[audio_capture] Shutting down...
+[audio_capture] Done.
+��载，请稍候）...
 [transcribe] 模型加载完成，开始接收音频流...
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/multiprocessing/resource_tracker.py:216: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
