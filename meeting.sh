@@ -42,9 +42,9 @@ cleanup_and_summarize() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TRANSCRIPTS_DIR="$SCRIPT_DIR/transcripts"
-PID_FILE="$SCRIPT_DIR/.capture.pid"
-CURRENT_SESSION="$SCRIPT_DIR/.current_session"
+TMPDIR_MEETING="${TMPDIR:-/tmp}/meeting-cli"
+PID_FILE="$TMPDIR_MEETING/.capture.pid"
+CURRENT_SESSION="$TMPDIR_MEETING/.current_session"
 
 # ====== 配置 ======
 VAULT_DIR="${MEETING_VAULT:-$HOME/Documents/Obsidian Vault}"
@@ -80,7 +80,7 @@ SUMMARY_PROMPT='你是一个专业的会议纪要助手。请根据以下会议�
 '
 # ====================
 
-mkdir -p "$TRANSCRIPTS_DIR"
+mkdir -p "$TMPDIR_MEETING"
 
 log() {
     echo "[meeting] $1" >&2
@@ -114,7 +114,7 @@ start_capture() {
     fi
 
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    TRANSCRIPT_FILE="$TRANSCRIPTS_DIR/meeting_${TIMESTAMP}.txt"
+    TRANSCRIPT_FILE="$TMPDIR_MEETING/meeting_${TIMESTAMP}.txt"
 
     echo "$TRANSCRIPT_FILE" > "$CURRENT_SESSION"
 
@@ -182,9 +182,9 @@ stop_capture() {
 generate_summary() {
     local TRANSCRIPT_FILE="$1"
 
-    # 如果没指定文件，用最新的
+    # 如果没指定文件，用临时目录最新的
     if [ -z "$TRANSCRIPT_FILE" ]; then
-        TRANSCRIPT_FILE=$(ls -t "$TRANSCRIPTS_DIR"/meeting_*.txt 2>/dev/null | head -1)
+        TRANSCRIPT_FILE=$(ls -t "$TMPDIR_MEETING"/meeting_*.txt 2>/dev/null | head -1)
     fi
 
     if [ -z "$TRANSCRIPT_FILE" ] || [ ! -f "$TRANSCRIPT_FILE" ]; then
@@ -225,8 +225,8 @@ generate_summary() {
     echo "$SUMMARY" > "$NOTE_FILE"
     echo "✓ 纪要已保存: $NOTE_FILE"
 
-    # 同时在转写目录保存一份
-    echo "$SUMMARY" > "${TRANSCRIPT_FILE%.txt}_summary.md"
+    # 清理转写临时文件
+    rm -f "$TRANSCRIPT_FILE"
 
     # 询问是否上传飞书
     upload_to_lark "$SUMMARY" "$DATE_STR" "$TIMESTAMP"
@@ -305,25 +305,6 @@ upload_to_lark() {
     esac
 }
 
-list_transcripts() {
-    echo "历史转写记录:"
-    echo ""
-    ls -lt "$TRANSCRIPTS_DIR"/meeting_*.txt 2>/dev/null | while read -r line; do
-        FILE=$(echo "$line" | awk '{print $NF}')
-        BASENAME=$(basename "$FILE")
-        LINES=$(wc -l < "$FILE" | tr -d ' ')
-        SUMMARY_EXISTS=""
-        if [ -f "${FILE%.txt}_summary.md" ]; then
-            SUMMARY_EXISTS="[已生成纪要]"
-        fi
-        echo "  $BASENAME  ($LINES 句) $SUMMARY_EXISTS"
-    done
-
-    if [ -z "$(ls "$TRANSCRIPTS_DIR"/meeting_*.txt 2>/dev/null)" ]; then
-        echo "  (无记录)"
-    fi
-}
-
 # 主入口
 case "${1:-help}" in
     start)
@@ -335,17 +316,12 @@ case "${1:-help}" in
     summary)
         generate_summary "$2"
         ;;
-    list)
-        list_transcripts
-        ;;
     help|*)
         echo "Meeting CLI — 会议纪要工具"
         echo ""
         echo "用法:"
         echo "  meeting start              开始录音+实时转写"
         echo "  meeting stop               停止，自动生成纪要"
-        echo "  meeting summary [文件]     对指定转写文件生成纪要"
-        echo "  meeting list               列出历史转写"
         echo ""
         echo "配置（环境变量）:"
         echo "  MEETING_VAULT              知识库路径 (默认: ~/Documents/Obsidian Vault)"

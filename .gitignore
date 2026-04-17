@@ -1,7 +1,5 @@
 audio_capture
-transcripts/
-.capture.pid
-.current_session
 __pycache__/
 *.pyc
 .env
+.meeting.log
