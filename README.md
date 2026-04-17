@@ -1,20 +1,22 @@
 # Meeting CLI
 
-会议纪要工具 — ScreenCaptureKit 音频采集 + 本地 FunASR 实时转写 + Claude 纪要 + Obsidian。
+会议纪要工具 — ScreenCaptureKit 音频采集 + 本地 FunASR 转写 + Claude 纪要 + Obsidian/飞书。
 
 ## 特点
 
-- **无需虚拟音频设备** — 用 macOS ScreenCaptureKit 直接捕获系统音频，不用装 BlackHole
-- **不存音频文件** — 音频实时流式处理，只占内存不占存储
-- **完全本地转写** — FunASR (paraformer) 本地运行，免费无限制，无需 API Key
+- **无需虚拟音频设备** — macOS ScreenCaptureKit 直接捕获系统音频+麦克风
+- **不存音频文件** — 音频只在内存中流过，不占存储
+- **完全本地转写** — FunASR (paraformer) 本地运行，免费无限制
+- **智能断句** — 能量 VAD 按说话节奏自动断句
 - **AI 纪要** — Claude 自动生成结构化会议纪要
-- **知识沉淀** — 纪要自动存入 Obsidian
+- **多端存储** — 纪要存入 Obsidian，可选上传飞书云文档
 
 ## 前提
 
 - macOS 13+ (Ventura)
 - Python 3
 - [Claude Code CLI](https://claude.ai/code)
+- [lark-cli](https://github.com/AndyJ-2026/lark-cli)（可选，用于上传飞书）
 
 ## 安装
 
@@ -24,6 +26,8 @@ cd meeting-cli
 ./setup.sh
 ```
 
+首次运行系统会请求屏幕录制和麦克风权限，ASR 模型自动下载（约 1GB）。
+
 ## 使用
 
 ### 开始会议
@@ -32,34 +36,28 @@ cd meeting-cli
 ./meeting.sh start
 ```
 
-系统首次运行会请求屏幕录制和麦克风权限。之后自动采集系统音频+麦克风，实时转写显示在终端。
+终端实时显示转写文字。
 
 ### 结束会议
 
-```bash
-./meeting.sh stop
-```
+按 **Ctrl+C**，自动：
 
-自动停止录音，Claude 生成结构化纪要并保存到 Obsidian。
-
-### 其他命令
-
-```bash
-./meeting.sh summary [文件]   # 对指定转写文件重新生成纪要
-./meeting.sh list              # 列出历史转写记录
-```
+1. 停止录音
+2. Claude 生成结构化纪要
+3. 保存到 Obsidian
+4. 询问是否上传飞书云文档
 
 ## 工作原理
 
 ```
 麦克风 ──┐
-         ├──→ PCM 流 ──→ DashScope ASR ──→ 转写文本 ──→ Claude ──→ 纪要 ──→ Obsidian
-系统音频 ─┘     (内存)      (本地模型)        (.txt)       (AI)      (.md)
+         ├──→ PCM 流 ──→ FunASR 本地转写 ──→ Claude 纪要 ──→ Obsidian
+系统音频 ─┘    (内存)      (paraformer)        (AI 总结)      飞书(可选)
 ```
 
-首次运行会自动下载 ASR 模型（约 1GB），之后全部离线运行。
-
 ## 配置
+
+通过环境变量配置（写入 `~/.zshrc`）：
 
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
