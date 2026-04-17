@@ -223,10 +223,86 @@ generate_summary() {
     fi
 
     echo "$SUMMARY" > "$NOTE_FILE"
-    echo "纪要已保存: $NOTE_FILE"
+    echo "✓ 纪要已保存: $NOTE_FILE"
 
     # 同时在转写目录保存一份
     echo "$SUMMARY" > "${TRANSCRIPT_FILE%.txt}_summary.md"
+
+    # 询问是否上传飞书
+    upload_to_lark "$SUMMARY" "$DATE_STR" "$TIMESTAMP"
+}
+
+upload_to_lark() {
+    local SUMMARY="$1"
+    local DATE_STR="$2"
+    local TIMESTAMP="$3"
+
+    # 检查 lark-cli 是否可用
+    if ! command -v lark &>/dev/null; then
+        return
+    fi
+
+    echo ""
+    echo -n "是否上传到飞书云文档？[y/N] "
+    read -r REPLY </dev/tty
+
+    case "$REPLY" in
+        y|Y|yes|YES)
+            echo "正在上传到飞书..."
+
+            DOC_TITLE="${DATE_STR} 会议纪要"
+
+            # 创建文档
+            CREATE_RESULT=$(lark doc create --title "$DOC_TITLE" 2>&1)
+            DOC_ID=$(echo "$CREATE_RESULT" | grep -o '"document_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+            if [ -z "$DOC_ID" ]; then
+                echo "创建文档失败: $CREATE_RESULT"
+                return
+            fi
+
+            # 逐段写入内容
+            echo "$SUMMARY" | while IFS= read -r line; do
+                # 跳过空行
+                [ -z "$line" ] && continue
+
+                # 识别标题
+                case "$line" in
+                    "# "*)
+                        HEADING="${line#\# }"
+                        lark doc append "$DOC_ID" --heading "$HEADING" --level 1 >/dev/null 2>&1
+                        ;;
+                    "## "*)
+                        HEADING="${line#\#\# }"
+                        lark doc append "$DOC_ID" --heading "$HEADING" --level 2 >/dev/null 2>&1
+                        ;;
+                    "### "*)
+                        HEADING="${line#\#\#\# }"
+                        lark doc append "$DOC_ID" --heading "$HEADING" --level 3 >/dev/null 2>&1
+                        ;;
+                    "- [ ] "*)
+                        TODO="${line#- \[ \] }"
+                        lark doc append "$DOC_ID" --todo "$TODO" >/dev/null 2>&1
+                        ;;
+                    "- "*)
+                        BULLET="${line#- }"
+                        lark doc append "$DOC_ID" --bullet "$BULLET" >/dev/null 2>&1
+                        ;;
+                    "---")
+                        lark doc append "$DOC_ID" --divider >/dev/null 2>&1
+                        ;;
+                    *)
+                        lark doc append "$DOC_ID" --text "$line" >/dev/null 2>&1
+                        ;;
+                esac
+            done
+
+            echo "✓ 已上传到飞书: $DOC_TITLE (ID: $DOC_ID)"
+            ;;
+        *)
+            echo "跳过上传。"
+            ;;
+    esac
 }
 
 list_transcripts() {
