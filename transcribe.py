@@ -28,9 +28,10 @@ except ImportError:
 # PCM 参数（与 audio_capture 输出一致）
 SAMPLE_RATE = 16000
 BYTES_PER_SAMPLE = 2
-# 每次处理 600ms 的音频（paraformer-streaming 推荐 chunk_size）
-CHUNK_DURATION_MS = 600
-CHUNK_SIZE = SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_DURATION_MS // 1000
+# 流式识别: 每次处理 600ms 音频 (10 帧 x 60ms)
+CHUNK_FRAMES = 10
+CHUNK_DURATION_MS = CHUNK_FRAMES * 60
+CHUNK_SIZE = SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_DURATION_MS // 1000  # 19200 bytes
 
 
 def log(msg):
@@ -48,13 +49,17 @@ def main():
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(f"# 会议转写 {time.strftime('%Y-%m-%d %H:%M')}\n\n")
 
-    # 加载模型（首次运行会自动下载 ~1GB）
+    # 加载流式 ASR 模型（不带 VAD，流式模式下 VAD 不兼容）
     log("正在加载 ASR 模型（首次运行需下载，请稍候）...")
 
     model = AutoModel(
         model="paraformer-zh-streaming",
-        vad_model="fsmn-vad",
-        punc_model="ct-punc",
+        disable_update=True,
+    )
+    # 单独加载标点模型
+    punc_model = AutoModel(
+        model="ct-punc",
+        disable_update=True,
     )
 
     log("模型加载完成")
@@ -64,6 +69,30 @@ def main():
     sentences = []
     lock = threading.Lock()
     cache = {}
+    text_buffer = ""
+
+    def output_line(text):
+        nonlocal text_buffer
+        if not text:
+            return
+        # 用标点模型加标点
+        try:
+            punc_result = punc_model.generate(input=text)
+            if punc_result and punc_result[0].get("text"):
+                text = punc_result[0]["text"]
+        except Exception:
+            pass
+
+        timestamp = time.strftime("%H:%M:%S")
+        line = f"[{timestamp}] {text}"
+        print(line, flush=True)
+
+        with lock:
+            sentences.append(line)
+
+        if args.output:
+            with open(args.output, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
 
     try:
         while True:
@@ -80,24 +109,19 @@ def main():
                 input=audio,
                 cache=cache,
                 is_final=False,
-                chunk_size=[0, 10, 5],  # [lookback, chunk, lookahead] in 60ms frames
+                chunk_size=[0, CHUNK_FRAMES, 5],
             )
 
             for result in results:
                 text = result.get("text", "").strip()
                 if not text:
                     continue
+                text_buffer += text
 
-                timestamp = time.strftime("%H:%M:%S")
-                line = f"[{timestamp}] {text}"
-                print(line, flush=True)
-
-                with lock:
-                    sentences.append(line)
-
-                if args.output:
-                    with open(args.output, "a", encoding="utf-8") as f:
-                        f.write(line + "\n")
+            # 当累积足够文字时输出一行（约每句话）
+            if len(text_buffer) >= 10:
+                output_line(text_buffer)
+                text_buffer = ""
 
     except KeyboardInterrupt:
         log("收到中断信号")
@@ -110,18 +134,14 @@ def main():
             input=np.zeros(SAMPLE_RATE, dtype=np.float32),
             cache=cache,
             is_final=True,
-            chunk_size=[0, 10, 5],
+            chunk_size=[0, CHUNK_FRAMES, 5],
         )
         for result in results:
             text = result.get("text", "").strip()
             if text:
-                timestamp = time.strftime("%H:%M:%S")
-                line = f"[{timestamp}] {text}"
-                print(line, flush=True)
-                sentences.append(line)
-                if args.output:
-                    with open(args.output, "a", encoding="utf-8") as f:
-                        f.write(line + "\n")
+                text_buffer += text
+        if text_buffer:
+            output_line(text_buffer)
     except Exception:
         pass
 
