@@ -58,8 +58,16 @@ log() {
 
 start_capture() {
     if [ -f "$PID_FILE" ]; then
-        echo "已有会议在进行中。先运行 meeting stop"
-        exit 1
+        OLD_PID=$(cat "$PID_FILE")
+        if kill -0 "$OLD_PID" 2>/dev/null; then
+            echo "已有会议在进行中。先运行 meeting stop"
+            exit 1
+        else
+            # 进程已死，清理残留
+            rm -f "$PID_FILE" "$CURRENT_SESSION"
+            pkill -f "audio_capture" 2>/dev/null || true
+            pkill -f "transcribe.py" 2>/dev/null || true
+        fi
     fi
 
     # 检查 audio_capture 二进制
