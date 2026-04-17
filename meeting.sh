@@ -1,6 +1,6 @@
 #!/bin/bash
 # meeting-cli — 会议纪要工具
-# ScreenCaptureKit 音频采集 + DashScope 实时转写 + Claude 纪要 + Obsidian
+# ScreenCaptureKit 音频采集 + FunASR 本地转写 + Claude 纪要 + Obsidian
 #
 # 用法:
 #   meeting start              开始录音+转写
@@ -97,12 +97,16 @@ start_capture() {
     echo "--- 实时转写 ---"
     echo ""
 
+    LOG_FILE="$SCRIPT_DIR/.meeting.log"
+
     # 记录当前进程组，方便 stop 时清理
     echo "$$" > "$PID_FILE"
 
-    # 前台运行管道，Ctrl+C 直接中断
-    exec "$SCRIPT_DIR/audio_capture" 2>&1 | \
-        python3 "$SCRIPT_DIR/transcribe.py" --output "$TRANSCRIPT_FILE"
+    # 前台运行管道
+    # audio_capture 日志 → 日志文件
+    # transcribe.py 日志(stderr) → 日志文件，转写文字(stdout) → 终端
+    exec "$SCRIPT_DIR/audio_capture" 2>"$LOG_FILE" | \
+        python3 "$SCRIPT_DIR/transcribe.py" --output "$TRANSCRIPT_FILE" 2>>"$LOG_FILE"
 }
 
 stop_capture() {
