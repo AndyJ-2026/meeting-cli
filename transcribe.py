@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 """
-实时转写模块 — 从 stdin 读取 PCM 流，用本地 FunASR (paraformer) 实时转写。
+实时转写模块 — 从 stdin 读取 PCM 流，用本地 FunASR (paraformer) 转写。
 
 输入: raw PCM (16-bit signed LE, mono, 16000 Hz) via stdin
 输出: 转写文本到 stdout（每句一行），日志到 stderr
 
 依赖: pip install funasr modelscope torch torchaudio
-
-用法:
-  ./audio_capture | python3 transcribe.py
-  ./audio_capture | python3 transcribe.py --output transcript.txt
 """
 
 import sys
+import os
 import time
 import argparse
-import threading
+import logging
+import warnings
 import numpy as np
 from pathlib import Path
+
+# 屏蔽所有 debug 日志和警告
+os.environ["FUNASR_LOG_LEVEL"] = "ERROR"
+os.environ["MODELSCOPE_LOG_LEVEL"] = "ERROR"
+logging.disable(logging.WARNING)
+warnings.filterwarnings("ignore")
 
 try:
     from funasr import AutoModel
@@ -25,13 +29,12 @@ except ImportError:
     print("错误: 请先安装 funasr: pip install funasr modelscope torch torchaudio", file=sys.stderr)
     sys.exit(1)
 
-# PCM 参数（与 audio_capture 输出一致）
+# PCM 参数
 SAMPLE_RATE = 16000
 BYTES_PER_SAMPLE = 2
-# 流式识别: 每次处理 600ms 音频 (10 帧 x 60ms)
-CHUNK_FRAMES = 10
-CHUNK_DURATION_MS = CHUNK_FRAMES * 60
-CHUNK_SIZE = SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_DURATION_MS // 1000  # 19200 bytes
+# 每 5 秒处理一次（非流式，准确率更高）
+CHUNK_SECONDS = 5
+CHUNK_SIZE = SAMPLE_RATE * BYTES_PER_SAMPLE * CHUNK_SECONDS
 
 
 def log(msg):
@@ -43,111 +46,63 @@ def main():
     parser.add_argument("--output", "-o", help="转写文本输出文件路径")
     args = parser.parse_args()
 
-    # 初始化输出文件
     if args.output:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(f"# 会议转写 {time.strftime('%Y-%m-%d %H:%M')}\n\n")
 
-    # 加载流式 ASR 模型（不带 VAD，流式模式下 VAD 不兼容）
     log("正在加载 ASR 模型（首次运行需下载，请稍候）...")
 
     model = AutoModel(
-        model="paraformer-zh-streaming",
+        model="paraformer-zh",
+        vad_model="fsmn-vad",
+        punc_model="ct-punc",
         disable_update=True,
-    )
-    # 单独加载标点模型
-    punc_model = AutoModel(
-        model="ct-punc",
-        disable_update=True,
+        disable_log=True,
     )
 
     log("模型加载完成")
-    log("开始接收音频流（stdin）...")
-    log("按 Ctrl+C 停止")
+    log("开始接收音频流...")
+    log("每 5 秒输出一次转写结果")
 
     sentences = []
-    lock = threading.Lock()
-    cache = {}
-    text_buffer = ""
-
-    def output_line(text):
-        nonlocal text_buffer
-        if not text:
-            return
-        # 用标点模型加标点
-        try:
-            punc_result = punc_model.generate(input=text)
-            if punc_result and punc_result[0].get("text"):
-                text = punc_result[0]["text"]
-        except Exception:
-            pass
-
-        timestamp = time.strftime("%H:%M:%S")
-        line = f"[{timestamp}] {text}"
-        print(line, flush=True)
-
-        with lock:
-            sentences.append(line)
-
-        if args.output:
-            with open(args.output, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
 
     try:
         while True:
             data = sys.stdin.buffer.read(CHUNK_SIZE)
             if not data:
-                log("stdin 已关闭")
                 break
 
-            # PCM bytes → float32 numpy array
             audio = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
 
-            # 流式识别
-            results = model.generate(
-                input=audio,
-                cache=cache,
-                is_final=False,
-                chunk_size=[0, CHUNK_FRAMES, 5],
-            )
+            # 跳过静音段（能量太低不处理）
+            if np.abs(audio).mean() < 0.005:
+                continue
+
+            results = model.generate(input=audio, batch_size_s=300)
 
             for result in results:
                 text = result.get("text", "").strip()
                 if not text:
                     continue
-                text_buffer += text
 
-            # 当累积足够文字时输出一行（约每句话）
-            if len(text_buffer) >= 10:
-                output_line(text_buffer)
-                text_buffer = ""
+                timestamp = time.strftime("%H:%M:%S")
+                line = f"[{timestamp}] {text}"
+                print(line, flush=True)
+                sentences.append(line)
+
+                if args.output:
+                    with open(args.output, "a", encoding="utf-8") as f:
+                        f.write(line + "\n")
 
     except KeyboardInterrupt:
-        log("收到中断信号")
+        pass
     except BrokenPipeError:
-        log("管道断开")
-
-    # 处理最后一段
-    try:
-        results = model.generate(
-            input=np.zeros(SAMPLE_RATE, dtype=np.float32),
-            cache=cache,
-            is_final=True,
-            chunk_size=[0, CHUNK_FRAMES, 5],
-        )
-        for result in results:
-            text = result.get("text", "").strip()
-            if text:
-                text_buffer += text
-        if text_buffer:
-            output_line(text_buffer)
-    except Exception:
         pass
 
     log(f"转写结束，共 {len(sentences)} 句")
     if args.output:
-        log(f"转写已保存到: {args.output}")
+        log(f"已保存: {args.output}")
 
 
 if __name__ == "__main__":
