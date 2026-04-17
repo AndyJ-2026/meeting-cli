@@ -4,9 +4,7 @@
 #
 # 用法:
 #   meeting start              开始录音+转写
-#   meeting stop               停止，生成纪要
-#   meeting summary [文件]     对指定转写文件生成纪要
-#   meeting list               列出历史转写
+#   Ctrl+C                     停止，自动生成纪要并存入 Obsidian
 
 set -e
 
