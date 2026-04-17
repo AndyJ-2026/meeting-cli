@@ -92,7 +92,7 @@ def main():
             audio = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
 
             # 跳过静音段（能量太低不处理）
-            if np.abs(audio).mean() < 0.005:
+            if np.abs(audio).mean() < 0.0005:
                 continue
 
             _real_stdout = sys.stdout

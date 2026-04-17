@@ -1,0 +1,15 @@
+[audio_capture] Starting audio capture (mode: both)...
+[audio_capture] Output format: PCM 16-bit signed LE, mono, 16000 Hz
+[audio_capture] Using display: 1470x956
+[audio_capture] System audio capture started (ScreenCaptureKit)
+[audio_capture] Mic input format: <AVAudioFormat 0xa72de9310:  1 ch,  48000 Hz, Float32>
+[audio_capture] Microphone capture started
+[audio_capture] Capture running. Press Ctrl+C to stop.
+[audio_capture] Shutting down...
+[audio_capture] Done.
+��载，请稍候）...
+[transcribe] 模型加载完成
+[transcribe] 开始接收音频流...
+[transcribe] 每 5 秒输出一次转写结果
+[transcribe] 转写结束，共 12 句
+[transcribe] 已保存: /Users/jaker/meeting-cli/transcripts/meeting_20260418_023659.txt
