@@ -31,11 +31,11 @@ fi
 
 # 安装 Python 依赖
 echo "[2/3] 安装 Python 依赖..."
-if python3 -c "import dashscope" 2>/dev/null; then
-    echo "  ✓ dashscope 已安装"
+if python3 -c "import funasr" 2>/dev/null; then
+    echo "  ✓ funasr 已安装"
 else
-    pip3 install dashscope
-    echo "  ✓ dashscope 安装完成"
+    pip3 install funasr modelscope torch torchaudio
+    echo "  ✓ funasr 安装完成"
 fi
 
 # 检查 Claude CLI
@@ -49,21 +49,11 @@ fi
 
 # 检查环境变量
 echo ""
-echo "=== 环境检查 ==="
-if [ -n "$DASHSCOPE_API_KEY" ]; then
-    echo "  ✓ DASHSCOPE_API_KEY 已设置"
-else
-    echo "  ⚠ DASHSCOPE_API_KEY 未设置"
-    echo "    获取: https://dashscope.console.aliyun.com/"
-    echo "    设置: export DASHSCOPE_API_KEY=sk-xxxxx"
-fi
-
-echo ""
 echo "=== 安装完成 ==="
 echo ""
-echo "首次使用时系统会弹出权限请求："
-echo "  • 屏幕录制权限（用于捕获系统音频）"
-echo "  • 麦克风权限（用于捕获你的声音）"
+echo "首次使用时："
+echo "  • 系统会弹出屏幕录制和麦克风权限请求"
+echo "  • ASR 模型会自动下载（约 1GB，仅首次）"
 echo ""
 echo "使用方法:"
 echo "  ./meeting.sh start    开始会议录音+转写"

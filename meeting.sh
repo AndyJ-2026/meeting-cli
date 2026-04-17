@@ -18,7 +18,6 @@ CURRENT_SESSION="$SCRIPT_DIR/.current_session"
 # ====== 配置 ======
 VAULT_DIR="${MEETING_VAULT:-$HOME/Documents/Obsidian Vault}"
 NOTES_FOLDER="${MEETING_NOTES_FOLDER:-会议纪要}"
-DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY:-}"
 
 SUMMARY_PROMPT='你是一个专业的会议纪要助手。请根据以下会议转录内容，生成一份结构化的会议纪要。
 
@@ -56,22 +55,12 @@ log() {
     echo "[meeting] $1" >&2
 }
 
-check_dashscope_key() {
-    if [ -z "$DASHSCOPE_API_KEY" ]; then
-        echo "错误: 请设置 DASHSCOPE_API_KEY 环境变量"
-        echo "  获取方式: https://dashscope.console.aliyun.com/"
-        echo "  设置: export DASHSCOPE_API_KEY=sk-xxxxx"
-        exit 1
-    fi
-}
 
 start_capture() {
     if [ -f "$PID_FILE" ]; then
         echo "已有会议在进行中。先运行 meeting stop"
         exit 1
     fi
-
-    check_dashscope_key
 
     # 检查 audio_capture 二进制
     if [ ! -x "$SCRIPT_DIR/audio_capture" ]; then
@@ -80,8 +69,8 @@ start_capture() {
     fi
 
     # 检查 Python 依赖
-    if ! python3 -c "import dashscope" 2>/dev/null; then
-        echo "dashscope 未安装，请运行: pip install dashscope"
+    if ! python3 -c "import funasr" 2>/dev/null; then
+        echo "funasr 未安装，请运行: pip install funasr modelscope torch torchaudio"
         exit 1
     fi
 
@@ -236,7 +225,6 @@ case "${1:-help}" in
         echo "  meeting list               列出历史转写"
         echo ""
         echo "配置（环境变量）:"
-        echo "  DASHSCOPE_API_KEY          DashScope API 密钥（必须）"
         echo "  MEETING_VAULT              知识库路径 (默认: ~/Documents/Obsidian Vault)"
         echo "  MEETING_NOTES_FOLDER       纪要文件夹 (默认: 会议纪要)"
         ;;
