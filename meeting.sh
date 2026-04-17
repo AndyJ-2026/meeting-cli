@@ -92,21 +92,48 @@ start_capture() {
     echo "  转写文件: meeting_${TIMESTAMP}.txt"
     echo "========================================="
     echo ""
-    echo "  运行 meeting stop 结束会议"
+    echo "  按 Ctrl+C 结束会议并生成纪要"
     echo ""
     echo "--- 实时转写 ---"
     echo ""
 
     LOG_FILE="$SCRIPT_DIR/.meeting.log"
 
-    # 记录当前进程组，方便 stop 时清理
-    echo "$$" > "$PID_FILE"
+    # 启动管道（后台运行）
+    "$SCRIPT_DIR/audio_capture" 2>"$LOG_FILE" | \
+        python3 "$SCRIPT_DIR/transcribe.py" --output "$TRANSCRIPT_FILE" 2>>"$LOG_FILE" &
+    PIPE_PID=$!
+    echo "$PIPE_PID" > "$PID_FILE"
 
-    # 前台运行管道
-    # audio_capture 日志 → 日志文件
-    # transcribe.py 日志(stderr) → 日志文件，转写文字(stdout) → 终端
-    exec "$SCRIPT_DIR/audio_capture" 2>"$LOG_FILE" | \
-        python3 "$SCRIPT_DIR/transcribe.py" --output "$TRANSCRIPT_FILE" 2>>"$LOG_FILE"
+    # Ctrl+C 时停止并生成纪要
+    trap '' INT  # 先忽略，避免 trap 处理函数自身被中断
+    trap '
+        echo ""
+        echo ""
+        echo "正在停止会议..."
+        kill $PIPE_PID 2>/dev/null || true
+        pkill -f "audio_capture" 2>/dev/null || true
+        pkill -f "transcribe.py" 2>/dev/null || true
+        wait $PIPE_PID 2>/dev/null
+        rm -f "$PID_FILE"
+        echo "会议已结束。"
+        echo ""
+        if [ -f "$TRANSCRIPT_FILE" ]; then
+            LINES=$(grep -c "^\[" "$TRANSCRIPT_FILE" 2>/dev/null || echo "0")
+            echo "转写: $LINES 句"
+            echo ""
+            if [ "$LINES" -gt 0 ]; then
+                generate_summary "$TRANSCRIPT_FILE"
+            else
+                echo "转写为空，跳过纪要生成。"
+            fi
+        fi
+        exit 0
+    ' INT TERM
+
+    # 前台等待管道
+    wait "$PIPE_PID" 2>/dev/null || true
+    rm -f "$PID_FILE"
 }
 
 stop_capture() {
@@ -118,25 +145,27 @@ stop_capture() {
     PID=$(cat "$PID_FILE")
     TRANSCRIPT_FILE=$(cat "$CURRENT_SESSION" 2>/dev/null)
 
-    echo ""
     echo "正在停止会议..."
 
     # 终止所有相关进程
     kill "$PID" 2>/dev/null || true
     pkill -f "audio_capture" 2>/dev/null || true
     pkill -f "transcribe.py" 2>/dev/null || true
+    sleep 1
 
     rm -f "$PID_FILE"
 
     echo "会议已结束。"
 
     if [ -n "$TRANSCRIPT_FILE" ] && [ -f "$TRANSCRIPT_FILE" ]; then
-        LINES=$(wc -l < "$TRANSCRIPT_FILE" | tr -d ' ')
-        echo "转写文件: $TRANSCRIPT_FILE ($LINES 句)"
+        LINES=$(grep -c "^\[" "$TRANSCRIPT_FILE" 2>/dev/null || echo "0")
+        echo "转写: $LINES 句"
         echo ""
-
-        # 自动生成纪要
-        generate_summary "$TRANSCRIPT_FILE"
+        if [ "$LINES" -gt 0 ]; then
+            generate_summary "$TRANSCRIPT_FILE"
+        else
+            echo "转写为空，跳过纪要生成。"
+        fi
     else
         echo "未找到转写文件。"
     fi

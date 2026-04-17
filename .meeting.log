@@ -2,10 +2,8 @@
 [audio_capture] Output format: PCM 16-bit signed LE, mono, 16000 Hz
 [audio_capture] Using display: 1470x956
 [audio_capture] System audio capture started (ScreenCaptureKit)
-[audio_capture] Mic input format: <AVAudioFormat 0xca4de9360:  1 ch,  48000 Hz, Float32>
+[audio_capture] Mic input format: <AVAudioFormat 0x700de9310:  1 ch,  48000 Hz, Float32>
 [audio_capture] Microphone capture started
 [audio_capture] Capture running. Press Ctrl+C to stop.
 [transcribe] 正在加载 ASR 模型（首次运行需下载，请稍候）...
-[transcribe] 模型加载完成
-[transcribe] 开始接收音频流...
-[transcribe] 每 5 秒输出一次转写结果
+[transcribe] 模型加载完成，开始接收音频流...
