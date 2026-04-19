@@ -100,6 +100,8 @@ log() {
 }
 
 
+AUDIO_ARGS=""
+
 start_capture() {
     if [ -f "$PID_FILE" ]; then
         OLD_PID=$(cat "$PID_FILE")
@@ -144,7 +146,7 @@ start_capture() {
     LOG_FILE="$SCRIPT_DIR/.meeting.log"
 
     # 启动管道（后台运行）
-    "$SCRIPT_DIR/audio_capture" 2>"$LOG_FILE" | \
+    "$SCRIPT_DIR/audio_capture" $AUDIO_ARGS 2>"$LOG_FILE" | \
         python3 "$SCRIPT_DIR/transcribe.py" --output "$TRANSCRIPT_FILE" 2>>"$LOG_FILE" &
     PIPE_PID=$!
     echo "$PIPE_PID" > "$PID_FILE"
@@ -321,6 +323,9 @@ upload_to_lark() {
 # 主入口
 case "${1:-help}" in
     start)
+        shift
+        # 透传参数给 audio_capture（如 --system-only, --mic-only）
+        AUDIO_ARGS="$*"
         start_capture
         ;;
     stop)
@@ -333,8 +338,9 @@ case "${1:-help}" in
         echo "Meeting CLI — 会议纪要工具"
         echo ""
         echo "用法:"
-        echo "  meeting start              开始录音+实时转写"
-        echo "  meeting stop               停止，自动生成纪要"
+        echo "  meeting start                    开始录音+实时转写"
+        echo "  meeting start --system-only      只录电脑声音（线上会议推荐）"
+        echo "  meeting stop                     停止，自动生成纪要"
         echo ""
         echo "配置（环境变量）:"
         echo "  MEETING_VAULT              知识库路径 (默认: ~/Documents/Obsidian Vault)"
