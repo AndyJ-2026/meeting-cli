@@ -48,7 +48,10 @@ CURRENT_SESSION="$TMPDIR_MEETING/.current_session"
 VAULT_DIR="${MEETING_VAULT:-$HOME/Documents/Obsidian Vault}"
 NOTES_FOLDER="${MEETING_NOTES_FOLDER:-会议纪要}"
 
-SUMMARY_PROMPT='你是一个专业的会议纪要助手。请根据以下会议转录内容，生成一份结构化的会议纪要。
+# 纪要模板：优先从 Obsidian 知识库读取，找不到则用默认
+TEMPLATE_FILE="$VAULT_DIR/$NOTES_FOLDER/纪要模板.md"
+
+DEFAULT_SUMMARY_PROMPT='你是一个专业的会议纪要助手。请根据以下会议转录内容，生成一份结构化的会议纪要。
 
 要求：
 1. 用中文输出
@@ -76,6 +79,18 @@ SUMMARY_PROMPT='你是一个专业的会议纪要助手。请根据以下会议�
 
 以下是转录内容：
 '
+
+if [ -f "$TEMPLATE_FILE" ]; then
+    SUMMARY_PROMPT=$(cat "$TEMPLATE_FILE")
+    # 确保模板末尾有换行和转录内容提示
+    SUMMARY_PROMPT="${SUMMARY_PROMPT}
+
+以下是转录内容：
+"
+    log "使用自定义纪要模板: $TEMPLATE_FILE"
+else
+    SUMMARY_PROMPT="$DEFAULT_SUMMARY_PROMPT"
+fi
 # ====================
 
 mkdir -p "$TMPDIR_MEETING"
@@ -324,5 +339,10 @@ case "${1:-help}" in
         echo "配置（环境变量）:"
         echo "  MEETING_VAULT              知识库路径 (默认: ~/Documents/Obsidian Vault)"
         echo "  MEETING_NOTES_FOLDER       纪要文件夹 (默认: 会议纪要)"
+        echo "  MEETING_SPEECH_THRESHOLD   语音能量阈值 (默认: 0.005，嘈杂环境可调高到 0.01-0.02)"
+        echo ""
+        echo "自定义纪要模板:"
+        echo "  在知识库的纪要文件夹中创建 '纪要模板.md' 即可自定义纪要格式。"
+        echo "  路径: \$MEETING_VAULT/\$MEETING_NOTES_FOLDER/纪要模板.md"
         ;;
 esac

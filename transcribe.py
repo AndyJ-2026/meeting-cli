@@ -45,7 +45,7 @@ FRAME_MS = 100  # 每帧 100ms
 FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 1600 samples
 FRAME_BYTES = FRAME_SAMPLES * BYTES_PER_SAMPLE  # 3200 bytes
 
-SPEECH_THRESHOLD = 0.001  # 语音能量阈值
+SPEECH_THRESHOLD = float(os.environ.get("MEETING_SPEECH_THRESHOLD", "0.005"))  # 语音能量阈值（默认 0.005，嘈杂环境可调高到 0.01-0.02）
 SILENCE_FRAMES = 5  # 连续 5 帧静音（500ms）则认为一句话结束
 MIN_SPEECH_FRAMES = 3  # 最少 3 帧（300ms）才算有效语音
 MAX_SPEECH_SECONDS = 15  # 最长 15 秒强制切句（避免一直不停）

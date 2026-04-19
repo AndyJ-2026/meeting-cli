@@ -57,9 +57,26 @@ cd meeting-cli
 
 ## 配置
 
+### 环境变量
+
 通过环境变量配置（写入 `~/.zshrc`）：
 
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
 | `MEETING_VAULT` | Obsidian 知识库路径 | `~/Documents/Obsidian Vault` |
 | `MEETING_NOTES_FOLDER` | 纪要文件夹名 | `会议纪要` |
+| `MEETING_SPEECH_THRESHOLD` | 语音能量阈值，越高越抗噪 | `0.005` |
+
+嘈杂环境建议调高阈值：
+
+```bash
+export MEETING_SPEECH_THRESHOLD=0.015
+```
+
+### 自定义纪要模板
+
+在 Obsidian 知识库的纪要文件夹中创建 `纪要模板.md`，即可自定义纪要格式和 prompt。CLI 会自动读取该文件作为 Claude 的生成指令。
+
+默认路径：`$MEETING_VAULT/$MEETING_NOTES_FOLDER/纪要模板.md`
+
+找不到模板文件时使用内置默认模板。
