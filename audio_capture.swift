@@ -440,6 +440,7 @@ let systemRingBuffer = AudioRingBuffer(capacity: Int(kTargetSampleRate) * 2)
 let micRingBuffer = AudioRingBuffer(capacity: Int(kTargetSampleRate) * 2)
 
 var scStream: SCStream?
+var systemAudioDelegate: SystemAudioCapture?
 var micCapture: MicrophoneCapture?
 var mixer: AudioMixer?
 
@@ -450,9 +451,10 @@ Task {
     do {
         switch captureMode {
         case .systemOnly:
-            let (stream, _) = try await startSystemAudioCapture(
+            let (stream, delegate) = try await startSystemAudioCapture(
                 ringBuffer: systemRingBuffer, directOutput: true)
             scStream = stream
+            systemAudioDelegate = delegate
 
         case .micOnly:
             let mic = MicrophoneCapture(ringBuffer: micRingBuffer, directOutput: true)
@@ -461,9 +463,10 @@ Task {
 
         case .both:
             // Start both captures writing to their ring buffers
-            let (stream, _) = try await startSystemAudioCapture(
+            let (stream, delegate) = try await startSystemAudioCapture(
                 ringBuffer: systemRingBuffer, directOutput: false)
             scStream = stream
+            systemAudioDelegate = delegate
 
             let mic = MicrophoneCapture(ringBuffer: micRingBuffer, directOutput: false)
             try mic.start()

@@ -39,6 +39,10 @@ cleanup_and_summarize() {
     exit 0
 }
 
+log() {
+    echo "[meeting] $1" >&2
+}
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TMPDIR_MEETING="${TMPDIR:-/tmp}/meeting-cli"
 PID_FILE="$TMPDIR_MEETING/.capture.pid"
@@ -94,11 +98,6 @@ fi
 # ====================
 
 mkdir -p "$TMPDIR_MEETING"
-
-log() {
-    echo "[meeting] $1" >&2
-}
-
 
 AUDIO_ARGS=""
 

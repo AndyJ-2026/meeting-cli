@@ -48,9 +48,9 @@ FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 1600 samples
 FRAME_BYTES = FRAME_SAMPLES * BYTES_PER_SAMPLE  # 3200 bytes
 
 SPEECH_THRESHOLD = float(os.environ.get("MEETING_SPEECH_THRESHOLD", "0.005"))  # 语音能量阈值（默认 0.005，嘈杂环境可调高到 0.01-0.02）
-SILENCE_FRAMES = 5  # 连续 5 帧静音（500ms）则认为一句话结束
-MIN_SPEECH_FRAMES = 3  # 最少 3 帧（300ms）才算有效语音
-MAX_SPEECH_SECONDS = 15  # 最长 15 秒强制切句（避免一直不停）
+SILENCE_FRAMES = 12  # 连续 12 帧静音（1.2s）则认为一句话结束
+MIN_SPEECH_FRAMES = 5  # 最少 5 帧（500ms）才算有效语音
+MAX_SPEECH_SECONDS = 30  # 最长 30 秒强制切句（与模型 VAD 一致）
 
 
 def log(msg):
