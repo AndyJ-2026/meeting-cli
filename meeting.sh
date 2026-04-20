@@ -339,6 +339,8 @@ case "${1:-help}" in
         echo "用法:"
         echo "  meeting start                    开始录音+实时转写"
         echo "  meeting start --system-only      只录电脑声音（线上会议推荐）"
+        echo "  meeting start --system-only --app Zoom  只录指定应用的声音"
+        echo "  meeting start --list-apps        列出可采集的应用"
         echo "  meeting stop                     停止，自动生成纪要"
         echo ""
         echo "配置（环境变量）:"

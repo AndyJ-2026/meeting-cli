@@ -33,10 +33,27 @@ cd meeting-cli
 ### 开始会议
 
 ```bash
+# 录麦克风+系统音频
 ./meeting.sh start
+
+# 只录系统音频（线上会议推荐）
+./meeting.sh start --system-only
+
+# 只录指定应用的音频（避免多个视频互相干扰）
+./meeting.sh start --system-only --app 飞书会议
+./meeting.sh start --system-only --app Chrome
+./meeting.sh start --system-only --app 哔哩哔哩
 ```
 
 终端实时显示转写文字。
+
+### 查看可采集的应用
+
+```bash
+./meeting.sh start --list-apps
+```
+
+列出当前所有可采集音频的应用名称，用于 `--app` 参数。
 
 ### 结束会议
 

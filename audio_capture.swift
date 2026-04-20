@@ -40,10 +40,22 @@ enum CaptureMode {
     case micOnly
 }
 
-func parseArgs() -> CaptureMode {
+struct CaptureOptions {
+    var mode: CaptureMode = .both
+    var appFilter: String? = nil  // 只采集指定应用的音频
+}
+
+func parseArgs() -> CaptureOptions {
     let args = CommandLine.arguments
-    if args.contains("--system-only") { return .systemOnly }
-    if args.contains("--mic-only") { return .micOnly }
+    var options = CaptureOptions()
+
+    if args.contains("--system-only") { options.mode = .systemOnly }
+    if args.contains("--mic-only") { options.mode = .micOnly }
+
+    if let idx = args.firstIndex(of: "--app"), idx + 1 < args.count {
+        options.appFilter = args[idx + 1]
+    }
+
     if args.contains("--help") || args.contains("-h") {
         FileHandle.standardError.write(Data("""
         Usage: audio_capture [OPTIONS]
@@ -52,9 +64,11 @@ func parseArgs() -> CaptureMode {
         Format: 16-bit signed LE, mono, 16000 Hz
 
         Options:
-          --system-only   Capture system audio only (no microphone)
-          --mic-only      Capture microphone only (no system audio)
-          --help, -h      Show this help message
+          --system-only       Capture system audio only (no microphone)
+          --mic-only          Capture microphone only (no system audio)
+          --app <name>        Only capture audio from the specified app (e.g. "Zoom", "Chrome")
+          --list-apps         List running apps that can be captured
+          --help, -h          Show this help message
 
         Requires Screen Recording permission for system audio capture.
         Requires Microphone permission for mic capture.
@@ -62,10 +76,12 @@ func parseArgs() -> CaptureMode {
         """.utf8))
         exit(0)
     }
-    return .both
+
+    return options
 }
 
-let captureMode = parseArgs()
+let captureOptions = parseArgs()
+let captureMode = captureOptions.mode
 
 // MARK: - Logging to stderr (stdout is for PCM data)
 
@@ -374,7 +390,19 @@ class AudioMixer {
 
 // MARK: - Main
 
-func startSystemAudioCapture(ringBuffer: AudioRingBuffer, directOutput: Bool) async throws -> (SCStream, SystemAudioCapture) {
+func listRunningApps() async {
+    let content = try! await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+    log("Running apps with audio:")
+    for app in content.applications {
+        let name = app.applicationName
+        let bundleID = app.bundleIdentifier
+        if !name.isEmpty {
+            FileHandle.standardError.write(Data("  \(name) (\(bundleID))\n".utf8))
+        }
+    }
+}
+
+func startSystemAudioCapture(ringBuffer: AudioRingBuffer, directOutput: Bool, appFilter: String? = nil) async throws -> (SCStream, SystemAudioCapture) {
     // Get shareable content
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
 
@@ -385,10 +413,27 @@ func startSystemAudioCapture(ringBuffer: AudioRingBuffer, directOutput: Bool) as
 
     log("Using display: \(display.width)x\(display.height)")
 
-    // Create a content filter for the entire display
-    let filter = SCContentFilter(display: display,
+    // Create content filter — optionally scoped to a specific app
+    let filter: SCContentFilter
+    if let appName = appFilter {
+        let matchedApps = content.applications.filter {
+            $0.applicationName.localizedCaseInsensitiveContains(appName)
+        }
+        guard !matchedApps.isEmpty else {
+            log("No running app matching '\(appName)'. Use --list-apps to see available apps.")
+            exit(1)
+        }
+        for app in matchedApps {
+            log("Filtering audio to: \(app.applicationName) (\(app.bundleIdentifier))")
+        }
+        filter = SCContentFilter(display: display,
+                                  including: matchedApps,
+                                  exceptingWindows: [])
+    } else {
+        filter = SCContentFilter(display: display,
                                   excludingApplications: [],
                                   exceptingWindows: [])
+    }
 
     // Configure stream: audio-only (minimal video to satisfy API)
     let config = SCStreamConfiguration()
@@ -432,7 +477,20 @@ signal(SIGPIPE) { _ in
 
 // MARK: - Entry Point
 
+// Handle --list-apps before starting capture
+if CommandLine.arguments.contains("--list-apps") {
+    Task {
+        await listRunningApps()
+        exit(0)
+    }
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 5))
+    exit(0)
+}
+
 log("Starting audio capture (mode: \(captureMode))...")
+if let app = captureOptions.appFilter {
+    log("App filter: \(app)")
+}
 log("Output format: PCM 16-bit signed LE, mono, \(Int(kTargetSampleRate)) Hz")
 
 // Ring buffers: ~2 seconds at 16kHz
@@ -452,7 +510,7 @@ Task {
         switch captureMode {
         case .systemOnly:
             let (stream, delegate) = try await startSystemAudioCapture(
-                ringBuffer: systemRingBuffer, directOutput: true)
+                ringBuffer: systemRingBuffer, directOutput: true, appFilter: captureOptions.appFilter)
             scStream = stream
             systemAudioDelegate = delegate
 
@@ -464,7 +522,7 @@ Task {
         case .both:
             // Start both captures writing to their ring buffers
             let (stream, delegate) = try await startSystemAudioCapture(
-                ringBuffer: systemRingBuffer, directOutput: false)
+                ringBuffer: systemRingBuffer, directOutput: false, appFilter: captureOptions.appFilter)
             scStream = stream
             systemAudioDelegate = delegate
 
