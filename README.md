@@ -6,7 +6,7 @@
 
 - **无需虚拟音频设备** — macOS ScreenCaptureKit 直接捕获系统音频+麦克风
 - **不存音频文件** — 音频只在内存中流过，不占存储
-- **完全本地转写** — FunASR (paraformer) 本地运行，免费无限制
+- **完全本地转写** — FunASR (SenseVoice) 本地运行，免费无限制
 - **智能断句** — 能量 VAD 按说话节奏自动断句
 - **AI 纪要** — Claude 自动生成结构化会议纪要
 - **多端存储** — 纪要存入 Obsidian，可选上传飞书云文档
@@ -26,7 +26,7 @@ cd meeting-cli
 ./setup.sh
 ```
 
-首次运行系统会请求屏幕录制和麦克风权限，ASR 模型自动下载（约 1GB）。
+首次运行系统会请求屏幕录制和麦克风权限，ASR 模型自动下载（约 200MB）。
 
 ## 使用
 
@@ -52,7 +52,7 @@ cd meeting-cli
 ```
 麦克风 ──┐
          ├──→ PCM 流 ──→ FunASR 本地转写 ──→ Claude 纪要 ──→ Obsidian
-系统音频 ─┘    (内存)      (paraformer)        (AI 总结)      飞书(可选)
+系统音频 ─┘    (内存)      (SenseVoice)        (AI 总结)      飞书(可选)
 ```
 
 ## 配置

@@ -1,6 +1,6 @@
 #!/bin/bash
 # meeting-cli — 会议纪要工具
-# ScreenCaptureKit 音频采集 + FunASR 本地转写 + Claude 纪要 + Obsidian
+# ScreenCaptureKit 音频采集 + FunASR (SenseVoice) 本地转写 + Claude 纪要 + Obsidian
 #
 # 用法:
 #   meeting start              开始录音+转写
