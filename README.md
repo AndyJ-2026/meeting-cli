@@ -11,14 +11,16 @@
 - **AI 纪要** — Claude 自动生成结构化会议纪要
 - **多端存储** — 纪要存入 Obsidian，可选上传飞书云文档
 
-## 前提
+## 安装
+
+### 前提
 
 - macOS 13+ (Ventura)
 - Python 3
 - [Claude Code CLI](https://claude.ai/code)
 - [lark-cli](https://github.com/AndyJ-2026/lark-cli)（可选，用于上传飞书）
 
-## 安装
+### 步骤
 
 ```bash
 git clone https://github.com/AndyJ-2026/meeting-cli.git
@@ -26,7 +28,24 @@ cd meeting-cli
 ./setup.sh
 ```
 
-首次运行系统会请求屏幕录制和麦克风权限，ASR 模型自动下载（约 2.8GB，含语音识别+VAD+标点三个模型）。
+`setup.sh` 会自动完成：
+1. 编译 Swift 音频采集工具 (audio_capture)
+2. 安装 Python 依赖 (funasr, modelscope, torch, torchaudio)
+3. 检查 Claude CLI
+
+首次运行时系统会请求屏幕录制和麦克风权限，ASR 模型自动下载（约 2.8GB）。
+
+### 模型说明
+
+| 模型 | 用途 | 大小 |
+|------|------|------|
+| Paraformer-large | 语音识别（中文，带时间戳） | 848 MB |
+| speech_fsmn_vad | 语音活动检测（切分静音段） | 3.9 MB |
+| punc_ct-transformer | 标点恢复 | 1.1 GB |
+
+模型来源：阿里达摩院 FunASR，缓存在 `~/.cache/modelscope/`。
+
+---
 
 ## 使用
 
@@ -39,10 +58,9 @@ cd meeting-cli
 # 只录系统音频（线上会议推荐）
 ./meeting.sh start --system-only
 
-# 只录指定应用的音频（避免多个视频互相干扰）
+# 只录指定应用的音频
 ./meeting.sh start --system-only --app 飞书会议
 ./meeting.sh start --system-only --app Chrome
-./meeting.sh start --system-only --app 哔哩哔哩
 ```
 
 终端实时显示转写文字。
@@ -53,8 +71,6 @@ cd meeting-cli
 ./meeting.sh start --list-apps
 ```
 
-列出当前所有可采集音频的应用名称，用于 `--app` 参数。
-
 ### 结束会议
 
 按 **Ctrl+C**，自动：
@@ -64,30 +80,13 @@ cd meeting-cli
 3. 保存到 Obsidian
 4. 询问是否上传飞书云文档
 
-## 工作原理
-
-```
-麦克风 ──┐
-         ├──→ PCM 流 ──→ FunASR 本地转写 ──→ Claude 纪要 ──→ Obsidian
-系统音频 ─┘    (内存)    (Paraformer-large     (AI 总结)      飞书(可选)
-                          + VAD + 标点)
-```
-
-### 模型说明
-
-| 模型 | 用途 | 大小 |
-|------|------|------|
-| Paraformer-large | 语音识别（中文，带时间戳） | 848 MB |
-| speech_fsmn_vad | 语音活动检测（切分静音段） | 3.9 MB |
-| punc_ct-transformer | 标点恢复 | 1.1 GB |
-
-模型来源：阿里达摩院 FunASR，缓存在 `~/.cache/modelscope/`。
+---
 
 ## 配置
 
 ### 环境变量
 
-通过环境变量配置（写入 `~/.zshrc`）：
+写入 `~/.zshrc`：
 
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
@@ -103,8 +102,19 @@ export MEETING_SPEECH_THRESHOLD=0.015
 
 ### 自定义纪要模板
 
-在 Obsidian 知识库的纪要文件夹中创建 `纪要模板.md`，即可自定义纪要格式和 prompt。CLI 会自动读取该文件作为 Claude 的生成指令。
+在知识库的纪要文件夹中创建 `纪要模板.md`，即可自定义纪要格式。CLI 会读取该文件作为 Claude 的生成指令。
 
-默认路径：`$MEETING_VAULT/$MEETING_NOTES_FOLDER/纪要模板.md`
+路径：`$MEETING_VAULT/$MEETING_NOTES_FOLDER/纪要模板.md`
 
-找不到模板文件时使用内置默认模板。
+找不到时使用内置默认模板。
+
+---
+
+## 架构
+
+```
+麦克风 ──┐
+         ├──→ PCM 流 ──→ FunASR 本地转写 ──→ Claude 纪要 ──→ Obsidian
+系统音频 ─┘    (内存)    (Paraformer-large     (AI 总结)      飞书(可选)
+                          + VAD + 标点)
+```
