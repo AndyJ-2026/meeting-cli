@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-实时转写模块 — 从 stdin 读取 PCM 流，用本地 FunASR (SenseVoice) 转写。
+实时转写模块 — 从 stdin 读取 PCM 流，用本地 FunASR (Paraformer-large) 转写。
 
 输入: raw PCM (16-bit signed LE, mono, 16000 Hz) via stdin
 输出: 转写文本到 stdout（每句一行），日志到 stderr
 
 依赖: pip install funasr modelscope torch torchaudio
-注意: SenseVoice 输出带 <|zh|><|NEUTRAL|> 等标签，需清理后输出。
 """
 
 import sys
@@ -81,8 +80,12 @@ def main():
 
     model = suppress_stdout(
         AutoModel,
-        model="iic/SenseVoiceSmall",
+        model="iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
+        model_revision="v2.0.4",
         vad_model="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+        vad_model_revision="v2.0.4",
+        punc_model="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
+        punc_model_revision="v2.0.4",
         vad_kwargs={"max_single_segment_time": 30000},
         disable_update=True,
     )
@@ -105,11 +108,10 @@ def main():
 
         results = suppress_stdout(
             model.generate, input=audio, batch_size_s=300, disable_pbar=True,
-            language="zh", use_itn=True,
         )
 
         for result in results:
-            text = re.sub(r"<\|[^|]*\|>", "", result.get("text", "")).strip()
+            text = result.get("text", "").strip()
             if not text:
                 continue
             timestamp = time.strftime("%H:%M:%S")

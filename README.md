@@ -6,8 +6,8 @@
 
 - **无需虚拟音频设备** — macOS ScreenCaptureKit 直接捕获系统音频+麦克风
 - **不存音频文件** — 音频只在内存中流过，不占存储
-- **完全本地转写** — FunASR (SenseVoice) 本地运行，免费无限制
-- **智能断句** — 能量 VAD 按说话节奏自动断句
+- **完全本地转写** — FunASR (Paraformer-large) 本地运行，免费无限制
+- **带标点断句** — Paraformer-large + VAD + 标点模型，输出自然可读
 - **AI 纪要** — Claude 自动生成结构化会议纪要
 - **多端存储** — 纪要存入 Obsidian，可选上传飞书云文档
 
@@ -26,7 +26,7 @@ cd meeting-cli
 ./setup.sh
 ```
 
-首次运行系统会请求屏幕录制和麦克风权限，ASR 模型自动下载（约 200MB）。
+首次运行系统会请求屏幕录制和麦克风权限，ASR 模型自动下载（约 2.8GB，含语音识别+VAD+标点三个模型）。
 
 ## 使用
 
@@ -69,8 +69,19 @@ cd meeting-cli
 ```
 麦克风 ──┐
          ├──→ PCM 流 ──→ FunASR 本地转写 ──→ Claude 纪要 ──→ Obsidian
-系统音频 ─┘    (内存)      (SenseVoice)        (AI 总结)      飞书(可选)
+系统音频 ─┘    (内存)    (Paraformer-large     (AI 总结)      飞书(可选)
+                          + VAD + 标点)
 ```
+
+### 模型说明
+
+| 模型 | 用途 | 大小 |
+|------|------|------|
+| Paraformer-large | 语音识别（中文，带时间戳） | 848 MB |
+| speech_fsmn_vad | 语音活动检测（切分静音段） | 3.9 MB |
+| punc_ct-transformer | 标点恢复 | 1.1 GB |
+
+模型来源：阿里达摩院 FunASR，缓存在 `~/.cache/modelscope/`。
 
 ## 配置
 
