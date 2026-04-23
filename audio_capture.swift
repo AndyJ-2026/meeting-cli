@@ -421,8 +421,12 @@ func startSystemAudioCapture(ringBuffer: AudioRingBuffer, directOutput: Bool, ap
     // Create content filter — optionally scoped to a specific app
     let filter: SCContentFilter
     if let appName = appFilter {
-        let matchedApps = content.applications.filter {
-            $0.applicationName.localizedCaseInsensitiveContains(appName)
+        let matchedApps = content.applications.filter { app in
+            let name = app.applicationName
+            // 精确匹配应用名称（忽略大小写），或应用名以关键字开头
+            // 排除系统辅助进程（名称中含括号的，如 "Open and Save Panel Service (Lark)"）
+            return name.localizedCaseInsensitiveCompare(appName) == .orderedSame
+                || name.lowercased().hasPrefix(appName.lowercased())
         }
         guard !matchedApps.isEmpty else {
             log("No running app matching '\(appName)'. Use --list-apps to see available apps.")
