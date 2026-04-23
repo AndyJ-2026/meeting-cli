@@ -371,10 +371,10 @@ class AudioMixer {
             let sysSamples = self.systemBuffer.read(count: self.chunkSize)
             let micSamples = self.micBuffer.read(count: self.chunkSize)
 
-            // Mix: simple addition with clipping
+            // Mix: attenuate each source to prevent clipping
             var mixed = [Float](repeating: 0, count: self.chunkSize)
             for i in 0..<self.chunkSize {
-                mixed[i] = sysSamples[i] + micSamples[i]
+                mixed[i] = sysSamples[i] * 0.7 + micSamples[i] * 0.7
             }
             outputPCMToStdout(mixed)
         }
@@ -391,14 +391,19 @@ class AudioMixer {
 // MARK: - Main
 
 func listRunningApps() async {
-    let content = try! await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-    log("Running apps with audio:")
-    for app in content.applications {
-        let name = app.applicationName
-        let bundleID = app.bundleIdentifier
-        if !name.isEmpty {
-            FileHandle.standardError.write(Data("  \(name) (\(bundleID))\n".utf8))
+    do {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        log("Running apps with audio:")
+        for app in content.applications {
+            let name = app.applicationName
+            let bundleID = app.bundleIdentifier
+            if !name.isEmpty {
+                FileHandle.standardError.write(Data("  \(name) (\(bundleID))\n".utf8))
+            }
         }
+    } catch {
+        log("无法获取应用列表，请检查屏幕录制权限: \(error.localizedDescription)")
+        exit(1)
     }
 }
 

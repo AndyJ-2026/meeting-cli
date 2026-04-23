@@ -18,8 +18,8 @@ cleanup_and_summarize() {
     echo ""
     echo "正在停止会议..."
     kill "$pipe_pid" 2>/dev/null
-    pkill -f "audio_capture" 2>/dev/null
-    pkill -f "transcribe.py" 2>/dev/null
+    pkill -xf "$SCRIPT_DIR/audio_capture.*" 2>/dev/null
+    pkill -f "$SCRIPT_DIR/transcribe.py" 2>/dev/null
     wait "$pipe_pid" 2>/dev/null
     rm -f "$PID_FILE"
 
@@ -44,6 +44,11 @@ log() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# 自动激活虚拟环境（如果存在）
+if [ -f "$SCRIPT_DIR/.venv/bin/activate" ]; then
+    source "$SCRIPT_DIR/.venv/bin/activate"
+fi
 TMPDIR_MEETING="${TMPDIR:-/tmp}/meeting-cli"
 PID_FILE="$TMPDIR_MEETING/.capture.pid"
 CURRENT_SESSION="$TMPDIR_MEETING/.current_session"
@@ -99,7 +104,7 @@ fi
 
 mkdir -p "$TMPDIR_MEETING"
 
-AUDIO_ARGS=""
+AUDIO_ARGS=()
 
 start_capture() {
     if [ -f "$PID_FILE" ]; then
@@ -110,8 +115,8 @@ start_capture() {
         else
             # 进程已死，清理残留
             rm -f "$PID_FILE" "$CURRENT_SESSION"
-            pkill -f "audio_capture" 2>/dev/null || true
-            pkill -f "transcribe.py" 2>/dev/null || true
+            pkill -xf "$SCRIPT_DIR/audio_capture.*" 2>/dev/null || true
+            pkill -f "$SCRIPT_DIR/transcribe.py" 2>/dev/null || true
         fi
     fi
 
@@ -145,7 +150,7 @@ start_capture() {
     LOG_FILE="$SCRIPT_DIR/.meeting.log"
 
     # 启动管道（后台运行）
-    "$SCRIPT_DIR/audio_capture" $AUDIO_ARGS 2>"$LOG_FILE" | \
+    "$SCRIPT_DIR/audio_capture" "${AUDIO_ARGS[@]}" 2>"$LOG_FILE" | \
         python3 "$SCRIPT_DIR/transcribe.py" --output "$TRANSCRIPT_FILE" 2>>"$LOG_FILE" &
     PIPE_PID=$!
     echo "$PIPE_PID" > "$PID_FILE"
@@ -171,8 +176,8 @@ stop_capture() {
 
     # 终止所有相关进程
     kill "$PID" 2>/dev/null || true
-    pkill -f "audio_capture" 2>/dev/null || true
-    pkill -f "transcribe.py" 2>/dev/null || true
+    pkill -xf "$SCRIPT_DIR/audio_capture.*" 2>/dev/null || true
+    pkill -f "$SCRIPT_DIR/transcribe.py" 2>/dev/null || true
     sleep 1
 
     rm -f "$PID_FILE"
@@ -223,6 +228,11 @@ generate_summary() {
 
     SUMMARY=$(echo "${SUMMARY_PROMPT}${TRANSCRIPT}" | claude --print)
 
+    if [ -z "$SUMMARY" ]; then
+        echo "Claude 生成失败，转写文件已保留: $TRANSCRIPT_FILE"
+        return
+    fi
+
     # 输出到终端
     echo "$SUMMARY"
     echo ""
@@ -239,11 +249,11 @@ generate_summary() {
     echo "$SUMMARY" > "$NOTE_FILE"
     echo "✓ 纪要已保存: $NOTE_FILE"
 
-    # 清理转写临时文件
-    rm -f "$TRANSCRIPT_FILE"
-
     # 询问是否上传飞书
     upload_to_lark "$SUMMARY" "$DATE_STR" "$TIMESTAMP"
+
+    # 上传完成后再清理转写临时文件
+    rm -f "$TRANSCRIPT_FILE"
 }
 
 upload_to_lark() {
@@ -324,7 +334,7 @@ case "${1:-help}" in
     start)
         shift
         # 透传参数给 audio_capture（如 --system-only, --mic-only）
-        AUDIO_ARGS="$*"
+        AUDIO_ARGS=("$@")
         start_capture
         ;;
     stop)

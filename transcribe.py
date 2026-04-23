@@ -17,6 +17,7 @@ import warnings
 import re
 import numpy as np
 from pathlib import Path
+from contextlib import redirect_stdout
 
 # 屏蔽 debug 日志、进度条和警告
 os.environ["MODELSCOPE_LOG_LEVEL"] = "40"
@@ -25,9 +26,12 @@ os.environ["TQDM_DISABLE"] = "1"
 logging.disable(logging.WARNING)
 warnings.filterwarnings("ignore")
 
+# 全局 devnull，避免重复 open 导致 fd 泄漏
+_devnull = open(os.devnull, "w")
+
 # 静音 import
 _real_stdout = sys.stdout
-sys.stdout = open(os.devnull, "w")
+sys.stdout = _devnull
 try:
     from funasr import AutoModel
 except ImportError:
@@ -58,12 +62,8 @@ def log(msg):
 
 def suppress_stdout(func, *args, **kwargs):
     """调用函数时屏蔽 stdout"""
-    _out = sys.stdout
-    sys.stdout = open(os.devnull, "w")
-    try:
+    with redirect_stdout(_devnull):
         return func(*args, **kwargs)
-    finally:
-        sys.stdout = _out
 
 
 def main():

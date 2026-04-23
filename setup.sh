@@ -34,8 +34,19 @@ echo "[2/3] 安装 Python 依赖..."
 if python3 -c "import funasr" 2>/dev/null; then
     echo "  ✓ funasr 已安装"
 else
-    pip3 install funasr modelscope torch torchaudio
-    echo "  ✓ funasr 安装完成"
+    # 优先使用虚拟环境
+    VENV_DIR="$SCRIPT_DIR/.venv"
+    if [ ! -d "$VENV_DIR" ]; then
+        echo "  创建虚拟环境: $VENV_DIR"
+        python3 -m venv "$VENV_DIR"
+    fi
+    echo "  激活虚拟环境..."
+    source "$VENV_DIR/bin/activate"
+    pip install funasr modelscope torch torchaudio
+    echo "  ✓ funasr 安装完成（虚拟环境: $VENV_DIR）"
+    echo ""
+    echo "  提示: 使用前请先激活虚拟环境:"
+    echo "    source $VENV_DIR/bin/activate"
 fi
 
 # 检查 Claude CLI
