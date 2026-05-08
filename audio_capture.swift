@@ -184,7 +184,7 @@ class AudioFormatConverter {
                 return nil
             }
             converter!.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Normal
-            converter!.sampleRateConverterQuality = AVAudioQuality.medium.rawValue
+            converter!.sampleRateConverterQuality = AVAudioQuality.max.rawValue
         }
 
         let ratio = kTargetSampleRate / inputFormat.sampleRate
@@ -374,7 +374,7 @@ class AudioMixer {
             // Mix: attenuate each source to prevent clipping
             var mixed = [Float](repeating: 0, count: self.chunkSize)
             for i in 0..<self.chunkSize {
-                mixed[i] = sysSamples[i] * 0.7 + micSamples[i] * 0.7
+                mixed[i] = sysSamples[i] * 0.85 + micSamples[i] * 0.85
             }
             outputPCMToStdout(mixed)
         }
