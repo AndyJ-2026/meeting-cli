@@ -38,19 +38,162 @@ enum CaptureMode {
     case both
     case systemOnly
     case micOnly
+    case auto
 }
 
 struct CaptureOptions {
     var mode: CaptureMode = .both
     var appFilter: String? = nil  // 只采集指定应用的音频
+    var forceBuiltInMic: Bool = false  // Force built-in mic (for Bluetooth scenarios)
+}
+
+// MARK: - Audio Device Detection
+
+/// Detect current output device and resolve auto mode.
+/// Always records both system audio + mic (for complete meeting transcription).
+/// Key behavior:
+/// - Bluetooth output → both mode + force built-in mic (avoid HFP degradation)
+/// - Built-in speaker → both mode (some echo, but captures all voices)
+/// - Wired headphones / USB → both mode (clean, no issues)
+func resolveAutoMode(_ options: inout CaptureOptions) {
+    var deviceID = AudioDeviceID(0)
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
+    let status = AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID)
+    guard status == noErr else {
+        log("Cannot detect output device, defaulting to both mode")
+        options.mode = .both
+        return
+    }
+
+    // Get transport type
+    var transportType: UInt32 = 0
+    size = UInt32(MemoryLayout<UInt32>.size)
+    address.mSelector = kAudioDevicePropertyTransportType
+    let tStatus = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &transportType)
+    guard tStatus == noErr else {
+        log("Cannot detect transport type, defaulting to both mode")
+        options.mode = .both
+        return
+    }
+
+    // Get device name for logging
+    var nameRef: CFString = "" as CFString
+    size = UInt32(MemoryLayout<CFString>.size)
+    address.mSelector = kAudioObjectPropertyName
+    AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &nameRef)
+    let deviceName = nameRef as String
+
+    switch transportType {
+    case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE:
+        log("Detected Bluetooth output: \(deviceName) → both mode + forced built-in mic")
+        options.mode = .both
+        options.forceBuiltInMic = true
+    case kAudioDeviceTransportTypeBuiltIn:
+        // Built-in could be speakers or headphone jack — check data source
+        var dataSource: UInt32 = 0
+        size = UInt32(MemoryLayout<UInt32>.size)
+        address.mSelector = kAudioDevicePropertyDataSource
+        address.mScope = kAudioDevicePropertyScopeOutput
+        let dsStatus = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &dataSource)
+        if dsStatus == noErr && dataSource == fourCharCode("hdpn") {
+            log("Detected wired headphones (built-in jack): \(deviceName) → both mode")
+        } else {
+            log("Detected built-in speaker: \(deviceName) → both mode (mic may pick up echo)")
+        }
+        options.mode = .both
+    case kAudioDeviceTransportTypeUSB:
+        log("Detected USB audio: \(deviceName) → both mode")
+        options.mode = .both
+    default:
+        log("Detected output device: \(deviceName) (transport=\(transportType)) → both mode")
+        options.mode = .both
+    }
+}
+
+/// Find the built-in microphone device ID (for use when Bluetooth is active).
+func getBuiltInMicDeviceID() -> AudioDeviceID? {
+    var propertySize: UInt32 = 0
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
+    AudioObjectGetPropertyDataSize(
+        AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &propertySize)
+    let deviceCount = Int(propertySize) / MemoryLayout<AudioDeviceID>.size
+    var devices = [AudioDeviceID](repeating: 0, count: deviceCount)
+    AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &propertySize, &devices)
+
+    for device in devices {
+        // Check transport type — must be built-in
+        var transportType: UInt32 = 0
+        var tSize = UInt32(MemoryLayout<UInt32>.size)
+        var tAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let tStatus = AudioObjectGetPropertyData(device, &tAddr, 0, nil, &tSize, &transportType)
+        guard tStatus == noErr, transportType == kAudioDeviceTransportTypeBuiltIn else { continue }
+
+        // Check if this device has input channels
+        var inputSize: UInt32 = 0
+        var inputAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectGetPropertyDataSize(device, &inputAddr, 0, nil, &inputSize)
+        guard inputSize > 0 else { continue }
+
+        let ablData = UnsafeMutablePointer<UInt8>.allocate(capacity: Int(inputSize))
+        defer { ablData.deallocate() }
+        let ablStatus = AudioObjectGetPropertyData(device, &inputAddr, 0, nil, &inputSize, ablData)
+        guard ablStatus == noErr else { continue }
+
+        let abl = ablData.withMemoryRebound(to: AudioBufferList.self, capacity: 1) { $0.pointee }
+        if abl.mBuffers.mNumberChannels > 0 {
+            // Get device name for logging
+            var nameRef: CFString = "" as CFString
+            var nameSize = UInt32(MemoryLayout<CFString>.size)
+            var nameAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioObjectPropertyName,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            AudioObjectGetPropertyData(device, &nameAddr, 0, nil, &nameSize, &nameRef)
+            log("Found built-in mic: \(nameRef as String) (ID: \(device))")
+            return device
+        }
+    }
+    return nil
+}
+
+/// Convert a 4-character string to its UInt32 FourCharCode representation
+func fourCharCode(_ string: String) -> UInt32 {
+    var result: UInt32 = 0
+    for char in string.utf8.prefix(4) {
+        result = (result << 8) | UInt32(char)
+    }
+    return result
 }
 
 func parseArgs() -> CaptureOptions {
     let args = CommandLine.arguments
     var options = CaptureOptions()
 
-    if args.contains("--system-only") { options.mode = .systemOnly }
-    if args.contains("--mic-only") { options.mode = .micOnly }
+    if args.contains("--auto") { options.mode = .auto }
+    else if args.contains("--system-only") { options.mode = .systemOnly }
+    else if args.contains("--mic-only") { options.mode = .micOnly }
 
     if let idx = args.firstIndex(of: "--app"), idx + 1 < args.count {
         options.appFilter = args[idx + 1]
@@ -64,11 +207,18 @@ func parseArgs() -> CaptureOptions {
         Format: 16-bit signed LE, mono, 16000 Hz
 
         Options:
+          --auto              Auto-detect output device and choose best mode (recommended)
           --system-only       Capture system audio only (no microphone)
           --mic-only          Capture microphone only (no system audio)
           --app <name>        Only capture audio from the specified app (e.g. "Zoom", "Chrome")
           --list-apps         List running apps that can be captured
           --help, -h          Show this help message
+
+        Auto mode behavior:
+          Bluetooth output  → system-only (avoids HFP mic quality degradation)
+          Built-in speaker  → system-only (avoids echo from speakers)
+          Wired headphones  → both (system audio + microphone)
+          USB audio         → both (system audio + microphone)
 
         Requires Screen Recording permission for system audio capture.
         Requires Microphone permission for mic capture.
@@ -80,7 +230,10 @@ func parseArgs() -> CaptureOptions {
     return options
 }
 
-let captureOptions = parseArgs()
+var captureOptions = parseArgs()
+if captureOptions.mode == .auto {
+    resolveAutoMode(&captureOptions)
+}
 let captureMode = captureOptions.mode
 
 // MARK: - Logging to stderr (stdout is for PCM data)
@@ -308,13 +461,41 @@ class MicrophoneCapture {
     let ringBuffer: AudioRingBuffer
     let converter = AudioFormatConverter()
     var directOutput: Bool
+    var forceBuiltInMic: Bool
 
-    init(ringBuffer: AudioRingBuffer, directOutput: Bool = false) {
+    init(ringBuffer: AudioRingBuffer, directOutput: Bool = false, forceBuiltInMic: Bool = false) {
         self.ringBuffer = ringBuffer
         self.directOutput = directOutput
+        self.forceBuiltInMic = forceBuiltInMic
     }
 
     func start() throws {
+        // If Bluetooth is active, force built-in mic to avoid HFP quality degradation
+        if forceBuiltInMic {
+            if let builtInID = getBuiltInMicDeviceID() {
+                let inputNode = engine.inputNode
+                guard let audioUnit = inputNode.audioUnit else {
+                    throw NSError(domain: "AudioCapture", code: -3,
+                                  userInfo: [NSLocalizedDescriptionKey: "Cannot access audio unit on input node"])
+                }
+                var deviceID = builtInID
+                let setStatus = AudioUnitSetProperty(
+                    audioUnit,
+                    kAudioOutputUnitProperty_CurrentDevice,
+                    kAudioUnitScope_Global, 0,
+                    &deviceID,
+                    UInt32(MemoryLayout<AudioDeviceID>.size)
+                )
+                if setStatus == noErr {
+                    log("Forced mic input to built-in device (ID: \(builtInID))")
+                } else {
+                    log("Warning: failed to set built-in mic (status: \(setStatus)), using default")
+                }
+            } else {
+                log("Warning: built-in mic not found, using default input device")
+            }
+        }
+
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
@@ -337,7 +518,7 @@ class MicrophoneCapture {
 
         engine.prepare()
         try engine.start()
-        log("Microphone capture started")
+        log("Microphone capture started\(forceBuiltInMic ? " (built-in mic forced)" : "")")
     }
 
     func stop() {
@@ -517,6 +698,9 @@ let runSemaphore = DispatchSemaphore(value: 0)
 Task {
     do {
         switch captureMode {
+        case .auto:
+            fatalError("auto mode should have been resolved before this point")
+
         case .systemOnly:
             let (stream, delegate) = try await startSystemAudioCapture(
                 ringBuffer: systemRingBuffer, directOutput: true, appFilter: captureOptions.appFilter)
@@ -524,7 +708,8 @@ Task {
             systemAudioDelegate = delegate
 
         case .micOnly:
-            let mic = MicrophoneCapture(ringBuffer: micRingBuffer, directOutput: true)
+            let mic = MicrophoneCapture(ringBuffer: micRingBuffer, directOutput: true,
+                                         forceBuiltInMic: captureOptions.forceBuiltInMic)
             try mic.start()
             micCapture = mic
 
@@ -535,7 +720,8 @@ Task {
             scStream = stream
             systemAudioDelegate = delegate
 
-            let mic = MicrophoneCapture(ringBuffer: micRingBuffer, directOutput: false)
+            let mic = MicrophoneCapture(ringBuffer: micRingBuffer, directOutput: false,
+                                         forceBuiltInMic: captureOptions.forceBuiltInMic)
             try mic.start()
             micCapture = mic
 
